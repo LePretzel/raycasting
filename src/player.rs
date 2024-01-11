@@ -1,7 +1,4 @@
-use nalgebra::{Matrix, SquareMatrix, Vector, Vector2};
-
-pub const SCREEN_WIDTH: u32 = 1280;
-pub const SCREEN_HEIGHT: u32 = 720;
+use nalgebra::{distance, Matrix, SquareMatrix, Vector, Vector2};
 
 pub struct Player {
     position: Vector2<f64>,
@@ -10,21 +7,21 @@ pub struct Player {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-enum Side {
+pub enum Side {
     Vertical,
     Horizontal,
 }
 
 impl Player {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             position: Vector2::new(0.0, 0.0),
             direction: Vector2::new(1.0, 0.0),
-            cam_plane: Vector2::new(0.0, -1.0),
+            cam_plane: Vector2::new(0.0, 1.0),
         }
     }
 
-    fn at_position(x_pos: f64, y_pos: f64) -> Self {
+    pub fn at_position(x_pos: f64, y_pos: f64) -> Self {
         let mut p = Self::new();
         p.position.x = x_pos;
         p.position.y = y_pos;
@@ -45,35 +42,52 @@ impl Player {
         }
     }
 
-    /// Find position and side of wall hit of first wall hit by ray
+    /// Find position and side of wall of first wall hit by ray
     /// Uses a modified version of the dda algorithm
-    fn get_collision(&self, dir: Vector2<f64>, map: Vec<Vec<i32>>) -> (Vector2<f64>, Side) {
+    /// Returns vector from player position to collision position
+    fn get_collision(&self, dir: Vector2<f64>, map: &Vec<Vec<i32>>) -> (Vector2<f64>, Side) {
         let point2 = dir * 2.0;
         let diff = point2 - dir;
-
         let m = (diff.y / diff.x).abs();
-        let mut curr_position = self.position;
+
+        let delta_dist_x = Vector2::new(1.0, m).magnitude();
+        let delta_dist_y = Vector2::new(1.0, 1.0 / m).magnitude();
 
         let x_step = if diff.x < 0.0 { -1.0 } else { 1.0 };
         let y_step = if diff.y < 0.0 { -1.0 } else { 1.0 };
 
-        let step = if m <= 1.0 {
-            Vector2::new(x_step, y_step * m)
+        let mut curr_distance = Vector2::new(0.0, 0.0);
+        let mut map_position = Vector2::new(self.position.x.floor(), self.position.y.floor());
+        curr_distance.x += if x_step > 0.0 {
+            (1.0 - self.position.x + map_position.x) * delta_dist_x
         } else {
-            Vector2::new(x_step / m, y_step)
+            (self.position.x - map_position.x) * delta_dist_x
+        };
+        curr_distance.y += if y_step > 0.0 {
+            (1.0 - self.position.y + map_position.y) * delta_dist_y
+        } else {
+            (self.position.y - map_position.y) * delta_dist_y
         };
 
-        while map[curr_position.y.round() as usize][curr_position.x.round() as usize] == 0 {
-            curr_position += step;
+        let mut total_distance = 0.0;
+        let mut side = Side::Horizontal;
+        while map[map_position.y as usize][map_position.x as usize] == 0 {
+            if curr_distance.x < curr_distance.y {
+                side = Side::Vertical;
+                total_distance = curr_distance.x;
+                curr_distance.x += delta_dist_x;
+                map_position.x += x_step;
+            } else {
+                side = Side::Horizontal;
+                total_distance = curr_distance.y;
+                curr_distance.y += delta_dist_y;
+                map_position.y += y_step;
+            }
         }
 
-        let side = if curr_position.x == curr_position.x.floor() {
-            Side::Horizontal
-        } else {
-            Side::Vertical
-        };
+        let hit_vector = total_distance * dir.normalize();
 
-        return (curr_position, side);
+        return (hit_vector, side);
     }
 }
 
@@ -90,13 +104,17 @@ mod tests {
         ]
     }
 
+    fn from_origin(player: Player, from_player: Vector2<f64>) -> Vector2<f64> {
+        from_player + player.position
+    }
+
     #[test]
     fn get_collision_location_slope_of_1_pos_x() {
         let map = simple_map();
         let player = Player::at_position(1.0, 1.0);
 
-        let (pos, side) = player.get_collision(Vector2::new(1.0, 1.0), map);
-        assert_eq!(pos, Vector2::new(3.0, 3.0));
+        let (hit, _) = player.get_collision(Vector2::new(1.0, 1.0), &map);
+        assert_eq!(from_origin(player, hit), Vector2::new(3.0, 3.0));
     }
 
     #[test]
@@ -104,8 +122,8 @@ mod tests {
         let map = simple_map();
         let player = Player::at_position(1.0, 1.0);
 
-        let (pos, side) = player.get_collision(Vector2::new(2.0, 1.0), map);
-        assert_eq!(pos, Vector2::new(3.0, 2.0));
+        let (hit, _) = player.get_collision(Vector2::new(2.0, 1.0), &map);
+        assert_eq!(from_origin(player, hit), Vector2::new(3.0, 2.0));
     }
 
     #[test]
@@ -113,8 +131,8 @@ mod tests {
         let map = simple_map();
         let player = Player::at_position(1.0, 1.0);
 
-        let (pos, side) = player.get_collision(Vector2::new(1.0, 2.0), map);
-        assert_eq!(pos, Vector2::new(2.0, 3.0));
+        let (hit, _) = player.get_collision(Vector2::new(1.0, 2.0), &map);
+        assert_eq!(from_origin(player, hit), Vector2::new(2.0, 3.0));
     }
 
     #[test]
@@ -122,17 +140,17 @@ mod tests {
         let map = simple_map();
         let player = Player::at_position(1.0, 1.0);
 
-        let (pos, side) = player.get_collision(Vector2::new(1.0, -1.0), map);
-        assert_eq!(pos, Vector2::new(2.0, 0.0));
+        let (hit, _) = player.get_collision(Vector2::new(1.0, -1.0), &map);
+        assert_eq!(from_origin(player, hit), Vector2::new(1.0, 1.0));
     }
 
     #[test]
     fn get_collision_location_abs_slope_less_than_1_pos_x_neg_y() {
         let map = simple_map();
-        let player = Player::at_position(1.0, 1.0);
+        let player = Player::at_position(1.0, 2.0);
 
-        let (pos, side) = player.get_collision(Vector2::new(2.0, -1.0), map);
-        assert_eq!(pos, Vector2::new(3.0, 0.0));
+        let (hit, _) = player.get_collision(Vector2::new(2.0, -1.0), &map);
+        assert_eq!(from_origin(player, hit), Vector2::new(3.0, 1.0));
     }
 
     #[test]
@@ -140,17 +158,17 @@ mod tests {
         let map = simple_map();
         let player = Player::at_position(1.0, 2.0);
 
-        let (pos, side) = player.get_collision(Vector2::new(0.5, -1.0), map);
-        assert_eq!(pos, Vector2::new(2.0, 0.0));
+        let (hit, _) = player.get_collision(Vector2::new(0.5, -1.0), &map);
+        assert_eq!(from_origin(player, hit), Vector2::new(1.5, 1.0));
     }
 
     #[test]
     fn get_collision_location_slope_of_neg_1_neg_x_pos_y() {
         let map = simple_map();
-        let player = Player::at_position(1.0, 1.0);
+        let player = Player::at_position(2.0, 1.0);
 
-        let (pos, side) = player.get_collision(Vector2::new(-1.0, 1.0), map);
-        assert_eq!(pos, Vector2::new(0.0, 2.0));
+        let (hit, _) = player.get_collision(Vector2::new(-1.0, 1.0), &map);
+        assert_eq!(from_origin(player, hit), Vector2::new(1.0, 2.0));
     }
 
     #[test]
@@ -158,8 +176,8 @@ mod tests {
         let map = simple_map();
         let player = Player::at_position(2.0, 1.0);
 
-        let (pos, side) = player.get_collision(Vector2::new(-1.0, 2.0), map);
-        assert_eq!(pos, Vector2::new(1.0, 3.0));
+        let (hit, _) = player.get_collision(Vector2::new(-1.0, 2.0), &map);
+        assert_eq!(from_origin(player, hit), Vector2::new(1.0, 3.0));
     }
 
     #[test]
@@ -167,35 +185,35 @@ mod tests {
         let map = simple_map();
         let player = Player::at_position(2.0, 1.0);
 
-        let (pos, side) = player.get_collision(Vector2::new(-4.0, 2.0), map);
-        assert_eq!(pos, Vector2::new(0.0, 2.0));
+        let (hit, _) = player.get_collision(Vector2::new(-4.0, 2.0), &map);
+        assert_eq!(from_origin(player, hit), Vector2::new(1.0, 1.5));
     }
 
     #[test]
     fn get_collision_location_slope_of_1_neg_x_neg_y() {
         let map = simple_map();
-        let player = Player::at_position(1.0, 1.0);
+        let player = Player::at_position(2.0, 2.0);
 
-        let (pos, side) = player.get_collision(Vector2::new(-1.0, -1.0), map);
-        assert_eq!(pos, Vector2::new(0.0, 0.0));
+        let (hit, _) = player.get_collision(Vector2::new(-1.0, -1.0), &map);
+        assert_eq!(from_origin(player, hit), Vector2::new(1.0, 1.0));
     }
 
     #[test]
     fn get_collision_location_abs_slope_greater_than_1_neg_x_neg_y() {
         let map = simple_map();
-        let player = Player::at_position(1.0, 1.0);
+        let player = Player::at_position(2.0, 2.0);
 
-        let (pos, side) = player.get_collision(Vector2::new(-1.0, -2.0), map);
-        assert_eq!(pos, Vector2::new(0.5, 0.0));
+        let (hit, _) = player.get_collision(Vector2::new(-1.0, -2.0), &map);
+        assert_eq!(from_origin(player, hit), Vector2::new(1.5, 1.0));
     }
 
     #[test]
     fn get_collision_location_abs_slope_less_than_1_neg_x_neg_y() {
         let map = simple_map();
-        let player = Player::at_position(1.0, 1.0);
+        let player = Player::at_position(2.0, 2.0);
 
-        let (pos, side) = player.get_collision(Vector2::new(-2.0, -1.0), map);
-        assert_eq!(pos, Vector2::new(0.0, 0.5));
+        let (hit, _) = player.get_collision(Vector2::new(-2.0, -1.0), &map);
+        assert_eq!(from_origin(player, hit), Vector2::new(1.0, 1.5));
     }
 
     #[test]
@@ -203,8 +221,8 @@ mod tests {
         let map = simple_map();
         let player = Player::at_position(1.0, 1.0);
 
-        let (pos, _) = player.get_collision(Vector2::new(1.0, 0.0), map);
-        assert_eq!(pos, Vector2::new(3.0, 1.0));
+        let (hit, _) = player.get_collision(Vector2::new(1.0, 0.0), &map);
+        assert_eq!(from_origin(player, hit), Vector2::new(3.0, 1.0));
     }
 
     #[test]
@@ -212,17 +230,8 @@ mod tests {
         let map = simple_map();
         let player = Player::at_position(1.0, 1.0);
 
-        let (pos, _) = player.get_collision(Vector2::new(0.0, 1.0), map);
-        assert_eq!(pos, Vector2::new(1.0, 3.0));
-    }
-
-    #[test]
-    fn get_collision_picks_horizontal_side_x_pos() {
-        let map = simple_map();
-        let player = Player::at_position(1.0, 1.0);
-
-        let (_, side) = player.get_collision(Vector2::new(0.4, 1.0), map);
-        assert_eq!(side, Side::Vertical);
+        let (hit, _) = player.get_collision(Vector2::new(0.0, 1.0), &map);
+        assert_eq!(from_origin(player, hit), Vector2::new(1.0, 3.0));
     }
 
     #[test]
@@ -230,7 +239,7 @@ mod tests {
         let map = simple_map();
         let player = Player::at_position(1.0, 1.0);
 
-        let (_, side) = player.get_collision(Vector2::new(0.4, 1.0), map);
+        let (_, side) = player.get_collision(Vector2::new(1.0, 0.0), &map);
         assert_eq!(side, Side::Vertical);
     }
 
@@ -239,7 +248,7 @@ mod tests {
         let map = simple_map();
         let player = Player::at_position(1.0, 1.0);
 
-        let (_, side) = player.get_collision(Vector2::new(1.0, 2.0), map);
+        let (_, side) = player.get_collision(Vector2::new(0.2, 1.0), &map);
         assert_eq!(side, Side::Horizontal);
     }
 }

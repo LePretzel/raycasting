@@ -28,18 +28,24 @@ impl Player {
         p
     }
 
-    fn render_frame(&mut self) {
-        for i in 0..SCREEN_WIDTH {
-            let x = 2.0 * (i as f64) / (SCREEN_WIDTH as f64) - 1.0;
-            // double rayDirX = dirX + planeX * cameraX;
-            // double rayDirY = dirY + planeY * cameraX;
-            let ray_dir = Vector2::new(
-                self.direction.x + self.cam_plane.x * x,
-                self.direction.y + self.cam_plane.y * x,
-            );
+    pub fn get_wall_distances(
+        &mut self,
+        map: &Vec<Vec<i32>>,
+        view_width: u32,
+    ) -> (Vec<f64>, Vec<Side>) {
+        let mut distances = Vec::new();
+        let mut sides = Vec::new();
+        for i in 0..view_width {
+            let offset = 2.0 * (i as f64) / (view_width as f64) - 1.0;
+            let ray_dir = self.direction + self.cam_plane * offset;
 
-            // let (hit_pos, side) = self.get_collision(ray_dir, self.map)
+            let (hit_vec, side) = self.get_collision(ray_dir, &map);
+            let hit_cam_plane_proj = hit_vec.dot(&self.cam_plane) * self.cam_plane;
+            let perp_distance = (hit_vec - hit_cam_plane_proj).magnitude();
+            distances.push(perp_distance);
+            sides.push(side)
         }
+        (distances, sides)
     }
 
     /// Find position and side of wall of first wall hit by ray

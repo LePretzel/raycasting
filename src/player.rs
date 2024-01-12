@@ -1,9 +1,13 @@
-use nalgebra::{distance, Matrix, SquareMatrix, Vector, Vector2};
+use std::f64::consts::PI;
+
+use nalgebra::{matrix, Matrix, SquareMatrix, Vector, Vector2};
 
 pub struct Player {
     position: Vector2<f64>,
     direction: Vector2<f64>,
     cam_plane: Vector2<f64>,
+    move_speed: f64,
+    rotate_speed: f64,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -18,6 +22,8 @@ impl Player {
             position: Vector2::new(0.0, 0.0),
             direction: Vector2::new(1.0, 0.0),
             cam_plane: Vector2::new(0.0, 1.0),
+            move_speed: 3.0,
+            rotate_speed: 3.0,
         }
     }
 
@@ -46,6 +52,24 @@ impl Player {
             sides.push(side)
         }
         (distances, sides)
+    }
+
+    pub fn move_player(&mut self, map: &Vec<Vec<i32>>, delta: f64, is_moving_forward: bool) {
+        let dir = if is_moving_forward { 1.0 } else { -1.0 };
+        let move_vector = self.direction * dir * self.move_speed * delta;
+        let new_position = self.position + move_vector;
+        if map[new_position.y as usize][new_position.x as usize] == 0 {
+            self.position = new_position;
+        }
+    }
+
+    pub fn rotate_player(&mut self, delta: f64, is_rotating_clockwise: bool) {
+        let direction = if is_rotating_clockwise { 1.0 } else { -1.0 };
+        let angle = PI / 2.0 * self.rotate_speed * delta * direction;
+        let rot_matrix = matrix![angle.cos(), -angle.sin();
+                                 angle.sin(), angle.cos()];
+        self.direction = rot_matrix * (self.direction);
+        self.cam_plane = rot_matrix * (self.cam_plane);
     }
 
     /// Find position and side of wall of first wall hit by ray

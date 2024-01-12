@@ -1,9 +1,15 @@
 mod player;
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use player::Player;
-use sdl2::{event::Event, keyboard::Keycode, pixels::Color, rect::Point, sys::Screen};
+use sdl2::{
+    event::Event,
+    keyboard::Keycode,
+    pixels::Color,
+    rect::Point,
+    sys::{KeyCode, SDL_Keycode, Screen},
+};
 
 use crate::player::Side;
 
@@ -21,7 +27,16 @@ fn main() {
         ]
     }
     let map = simple_map();
-    // Placeholder sdl setup code from docs
+
+    #[derive(Debug)]
+    enum MoveType {
+        Move,
+        Rotate,
+        None,
+    }
+    let mut movement = MoveType::None;
+    let mut forward = true;
+
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
 
@@ -37,20 +52,76 @@ fn main() {
     canvas.clear();
     canvas.present();
     let mut event_pump = sdl_context.event_pump().unwrap();
+    let mut now = Instant::now();
     'running: loop {
+        let delta = now.elapsed().as_secs_f64();
+        now = Instant::now();
         canvas.set_draw_color(Color::RGB(0, 0, 0));
         canvas.clear();
+
         for event in event_pump.poll_iter() {
             match event {
-                Event::Quit { .. }
-                | Event::KeyDown {
+                Event::Quit { .. } => break 'running,
+                Event::KeyDown {
                     keycode: Some(Keycode::Escape),
                     ..
                 } => break 'running,
-                _ => {}
+                Event::KeyDown {
+                    keycode: Some(Keycode::W),
+                    ..
+                } => {
+                    movement = MoveType::Move;
+                    forward = true
+                }
+                Event::KeyDown {
+                    keycode: Some(Keycode::S),
+                    ..
+                } => {
+                    movement = MoveType::Move;
+                    forward = false;
+                }
+                Event::KeyDown {
+                    keycode: Some(Keycode::D),
+                    ..
+                } => {
+                    movement = MoveType::Rotate;
+                    forward = true;
+                }
+                Event::KeyDown {
+                    keycode: Some(Keycode::A),
+                    ..
+                } => {
+                    movement = MoveType::Rotate;
+                    forward = false;
+                }
+                Event::KeyUp {
+                    keycode: Some(Keycode::W),
+                    ..
+                }
+                | Event::KeyUp {
+                    keycode: Some(Keycode::S),
+                    ..
+                }
+                | Event::KeyUp {
+                    keycode: Some(Keycode::A),
+                    ..
+                }
+                | Event::KeyUp {
+                    keycode: Some(Keycode::D),
+                    ..
+                } => movement = MoveType::None,
+                _ => (),
             }
         }
-        // The rest of the game loop goes here...
+        match movement {
+            MoveType::Move => {
+                player.move_player(&map, delta, forward);
+            }
+            MoveType::Rotate => {
+                player.rotate_player(delta, forward);
+            }
+            _ => (),
+        }
 
         let (dists, sides) = player.get_wall_distances(&map, SCREEN_WIDTH);
         let inverse_dists: Vec<f64> = dists.iter().map(|i| (1.0 / i)).collect();
@@ -83,6 +154,5 @@ fn main() {
         }
 
         canvas.present();
-        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
     }
 }
